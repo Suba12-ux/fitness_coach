@@ -21,6 +21,7 @@
     transparent 55%
   );
   backdrop-filter: blur(16px);
+  overflow-y: auto;
 }
 
 .brand {

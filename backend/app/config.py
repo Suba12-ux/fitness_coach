@@ -24,6 +24,13 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
 @dataclass(frozen=True)
 class Settings:
     """Конфигурация, переопределяемая через переменные окружения."""
@@ -44,6 +51,20 @@ class Settings:
     cors_origins: str = os.getenv(
         "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
     )
+
+    # Аутентификация и сессии
+    auth_cookie_name: str = os.getenv("AUTH_COOKIE_NAME", "sensei_session")
+    auth_cookie_secure: bool = _env_bool("AUTH_COOKIE_SECURE", False)
+    auth_session_ttl_days: int = max(1, _env_int("AUTH_SESSION_TTL_DAYS", 7))
+    auth_login_rate_limit: int = _env_int("AUTH_LOGIN_RATE_LIMIT", 10)
+    auth_login_rate_window_seconds: int = _env_int(
+        "AUTH_LOGIN_RATE_WINDOW_SECONDS", 900
+    )
+
+    @property
+    def auth_cookie_secure_effective(self) -> bool:
+        """Secure-cookie обязателен в production и включается флагом локально."""
+        return self.auth_cookie_secure or self.app_env == "production"
 
     @property
     def cors_origins_list(self) -> list[str]:

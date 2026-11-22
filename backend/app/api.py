@@ -5,13 +5,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
+from app.auth.dependencies import get_current_user
+from app.auth.router import router as auth_router
 from app.config import settings
+from app.db.models.user import User
 from app.db.repositories import workflow_repository
 from app.db.session import AsyncSessionLocal, async_engine, create_all
 from app.queue import enqueue_workflow
@@ -68,6 +71,7 @@ def create_app(session_factory=None, engine=None) -> FastAPI:
         yield
 
     app = FastAPI(title="Sensei AI Fitness Coach", lifespan=lifespan)
+    app.state.session_factory = sf
 
     app.add_middleware(
         CORSMiddleware,
@@ -76,6 +80,8 @@ def create_app(session_factory=None, engine=None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    app.include_router(auth_router)
 
     @app.get("/health")
     def health() -> Dict[str, str]:
@@ -109,13 +115,16 @@ def create_app(session_factory=None, engine=None) -> FastAPI:
         )
 
     @app.post("/workflow", response_model=WorkflowResponse, status_code=202)
-    async def create_workflow(body: WorkflowRequest) -> WorkflowResponse:
+    async def create_workflow(
+        body: WorkflowRequest, user: User = Depends(get_current_user)
+    ) -> WorkflowResponse:
         async with sf() as session:
             run = await workflow_repository.create_run(
                 session,
                 request=body.request,
                 user_data=body.user_data,
                 status="queued",
+                user_id=user.id,
             )
             run_id = run.id
             created_at = run.created_at
@@ -147,12 +156,15 @@ def create_app(session_factory=None, engine=None) -> FastAPI:
         limit: int = Query(20, ge=1, le=100),
         offset: int = Query(0, ge=0),
         status: Optional[str] = Query(None),
+        user: User = Depends(get_current_user),
     ) -> WorkflowList:
         async with sf() as session:
-            runs = await workflow_repository.list_runs(
-                session, limit=limit, offset=offset, status=status
+            runs = await workflow_repository.list_runs_for_user(
+                session, user.id, limit=limit, offset=offset, status=status
             )
-            total = await workflow_repository.count_runs(session, status=status)
+            total = await workflow_repository.count_runs_for_user(
+                session, user.id, status=status
+            )
 
         return WorkflowList(
             items=[
@@ -170,9 +182,13 @@ def create_app(session_factory=None, engine=None) -> FastAPI:
         )
 
     @app.get("/workflow/{run_id}", response_model=WorkflowResponse)
-    async def get_workflow(run_id: str) -> WorkflowResponse:
+    async def get_workflow(
+        run_id: str, user: User = Depends(get_current_user)
+    ) -> WorkflowResponse:
         async with sf() as session:
-            run = await workflow_repository.get_run(session, run_id)
+            run = await workflow_repository.get_run_for_user(
+                session, run_id, user.id
+            )
             if run is None:
                 raise HTTPException(status_code=404, detail="Запуск не найден.")
             return _to_response(

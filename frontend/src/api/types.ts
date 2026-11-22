@@ -78,3 +78,31 @@ export interface ReadyResponse {
   status: "ok" | "degraded" | string;
   checks: Record<string, string>;
 }
+
+export interface User {
+  id: string;
+  email: string;
+  created_at?: string | null;
+}
+
+export interface LoginPayload {
+  email: string;
+  password: string;
+  remember_me?: boolean;
+}
+
+export interface RegisterPayload extends LoginPayload {}
+
+export interface ChangePasswordPayload {
+  current_password: string;
+  new_password: string;
+}
+
+export interface AuthSession {
+  id: string;
+  user_agent?: string | null;
+  created_at?: string | null;
+  last_used_at?: string | null;
+  expires_at?: string | null;
+  is_current: boolean;
+}

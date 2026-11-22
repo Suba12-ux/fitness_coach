@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.config import settings
 from app.db.base import Base
-from app.db.models import workflow  # noqa: F401 — регистрация моделей
+from app.db import models  # noqa: F401 — регистрация всех моделей
 
 config = context.config
 

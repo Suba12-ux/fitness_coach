@@ -3,8 +3,8 @@
 full-stack прототип мультиагентной системы для подготовки планов тренировок
 с веб-интерфейсом: суперагент (Supervisor) принимает запрос, формирует план,
 передаёт подзадачи специализированным агентам, проверяет результаты и собирает
-итоговый ответ. React-интерфейс позволяет создать заявку, следить за статусом,
-читать готовый план и историю запусков.
+итоговый ответ. React-интерфейс позволяет зарегистрироваться, создать заявку,
+следить за статусом, читать готовый план и личную историю запусков.
 
 
 ## Текущий статус
@@ -17,6 +17,9 @@ full-stack прототип мультиагентной системы для �
 - PostgreSQL (asyncpg) с Alembic-миграциями; SQLite (aiosqlite) — локальный фолбэк.
 - Redis + ARQ: фоновое выполнение workflow в отдельном Worker-процессе.
 - FastAPI API с постановкой задач в очередь, чтением статуса и списком истории.
+- Регистрация и вход по email, серверные сессии в HttpOnly cookie, смена пароля,
+  список активных сессий и выход со всех устройств.
+- Персональная история: запуски привязаны к пользователю и недоступны другим.
 - Веб-интерфейс на React 19 + TypeScript + Vite: мастер создания плана,
   живой прогресс, экран результата, история, тёмная и светлая темы.
 - Полный запуск через Docker Compose (frontend, backend, worker, postgres, redis).
@@ -31,6 +34,7 @@ full-stack прототип мультиагентной системы для �
 - Повторные попытки, тайм-ауты, защита от повторного выполнения одной задачи.
 - Интерфейс: валидация формы, примеры запросов, поллинг статуса, карточки тренировок,
   отчёт безопасности, копирование и экспорт результата в JSON/Markdown.
+- Регистрация и вход, «Запомнить меня», защита истории, управление сессиями.
 
 ## Архитектура
 
@@ -74,9 +78,12 @@ LLM предлагает план, но не получает неогранич
 
 ### Хранение и очереди
 
-- **PostgreSQL** — постоянное состояние (`workflow_runs`) с временными отметками
+- **PostgreSQL** — постоянное состояние (`workflow_runs`), пользователи (`users`)
+  и серверные сессии (`user_sessions`) с временными отметками
   создания/старта/завершения. Схема управляется через Alembic.
 - **Redis** — брокер очередей; **Worker** (ARQ) получает задачи и выполняет workflow.
+- **Аутентификация** — непрозрачные сессионные токены в HttpOnly cookie;
+  в БД хранятся только SHA-256 хеши токенов, пароли — scrypt-хеши.
 
 ## Структура проекта
 
@@ -84,8 +91,10 @@ LLM предлагает план, но не получает неогранич
 backend/
 ├── app/
 │   ├── agents/          # base, profile_agent, training_agent, safety_checker, supervisor
+│   ├── auth/            # router, dependencies, cookies, rate_limit
 │   ├── llm/             # base, deepseek, mock, factory
-│   ├── schemas/         # tasks, results, llm, api
+│   ├── schemas/         # tasks, results, llm, api, auth
+│   ├── security/        # scrypt-пароли и сессионные токены
 │   ├── services/        # workflow
 │   ├── db/              # base, session, models/, repositories/
 │   ├── workers/         # jobs, workflow_worker
@@ -100,9 +109,11 @@ backend/
 frontend/
 ├── src/
 │   ├── api/             # типизированный клиент и схемы ответов
-│   ├── components/      # Composer, RunProgress, ResultView, HistoryList, Navigation
+│   ├── auth/            # AuthProvider и состояние сессии
+│   ├── components/      # Composer, RunProgress, ResultView, HistoryList, AuthScreen, AccountDialog
 │   ├── hooks/           # тема, поллинг, тосты, состояние системы
 │   ├── lib/             # валидация, форматирование, markdown-экспорт
+│   ├── pages/           # Workspace (рабочая область после входа)
 │   └── styles/          # дизайн-токены и компонентные стили
 ├── nginx.conf
 ├── Dockerfile
@@ -142,6 +153,11 @@ cp .env.example .env
 | `POSTGRES_PORT` | Порт PostgreSQL в Docker Compose | `5432` |
 | `REDIS_PORT` | Порт Redis в Docker Compose | `6379` |
 | `CORS_ORIGINS` | Разрешённые origins фронтенда (через запятую) | `http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173,http://127.0.0.1:5173` |
+| `AUTH_COOKIE_NAME` | Имя HttpOnly cookie с сессией | `sensei_session` |
+| `AUTH_COOKIE_SECURE` | Требовать HTTPS для cookie (включается автоматически при `APP_ENV=production`) | `false` |
+| `AUTH_SESSION_TTL_DAYS` | Срок жизни серверной сессии, дней | `7` |
+| `AUTH_LOGIN_RATE_LIMIT` | Неудачных попыток входа до блокировки | `10` |
+| `AUTH_LOGIN_RATE_WINDOW_SECONDS` | Окно подсчёта попыток, секунд | `900` |
 | `LLM_PROVIDER` | `mock` или `deepseek` | `mock` |
 | `DEEPSEEK_API_KEY` | Ключ DeepSeek | — |
 | `DEEPSEEK_MODEL` | Модель DeepSeek | `deepseek-chat` |
@@ -235,7 +251,7 @@ npm run dev
 ```
 
 Интерфейс откроется на `http://localhost:5173`. Vite проксирует запросы
-`/workflow`, `/health` и `/ready` на backend `http://127.0.0.1:8000`,
+`/auth`, `/workflow`, `/health` и `/ready` на backend `http://127.0.0.1:8000`,
 поэтому CORS для dev-режима не требуется.
 
 Для проверки production-сборки:
@@ -306,7 +322,7 @@ docker compose up --build -d
 | `migrate` | однократно выполняет `alembic upgrade head` | `postgres` |
 | `backend` | FastAPI API на порту `8000` | `postgres`, `redis`, `migrate` |
 | `worker` | ARQ Worker, забирает задачи из Redis | `postgres`, `redis`, `migrate` |
-| `frontend` | nginx: UI + прокси `/workflow`, `/health`, `/ready`, `/docs` | `backend` (healthy) |
+| `frontend` | nginx: UI + прокси `/auth`, `/workflow`, `/health`, `/ready`, `/docs` | `backend` (healthy) |
 
 ### 3. Куда подключаться
 
@@ -395,8 +411,9 @@ curl http://localhost:8080/ready
 # {"status":"ok","checks":{"database":"ok","redis":"ok"}}
 ```
 
-Откройте `http://localhost:8080`, заполните профиль и создайте план: запуск
-пройдёт через Redis в Worker и вернётся в интерфейс как `completed`.
+Откройте `http://localhost:8080`, зарегистрируйтесь, заполните профиль и
+создайте план: запуск пройдёт через Redis в Worker и вернётся в интерфейс как
+`completed`. История будет доступна только этому аккаунту.
 
 ### 8. Типичные проблемы Docker-запуска
 
@@ -412,6 +429,69 @@ curl http://localhost:8080/ready
   недоступен: `docker compose ps` и `docker compose logs worker redis`.
 - **`migrate` завершился с ошибкой** — проверьте подключение к PostgreSQL:
   `docker compose logs migrate postgres`.
+
+## Аутентификация и сессии
+
+Все методы `/workflow` требуют авторизации. Сессия хранится в cookie
+`sensei_session` со следующими флагами:
+
+- `HttpOnly` — токен недоступен JavaScript;
+- `SameSite=Lax` — cookie не отправляется с чужих сайтов;
+- `Secure` — автоматически включается при `APP_ENV=production`
+  (или вручную через `AUTH_COOKIE_SECURE=true`);
+- `Max-Age` — только при включённом «Запомнить меня»; без него cookie
+  действует до закрытия браузера.
+
+Серверная сессия живёт `AUTH_SESSION_TTL_DAYS` (по умолчанию 7 дней). В базе
+хранится только SHA-256 хеш токена, а пароли — scrypt-хеши. Смена пароля
+завершает все сессии и выдаёт новую сессию текущему устройству.
+
+Основные эндпоинты:
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| `POST` | `/auth/register` | Регистрация и автоматический вход |
+| `POST` | `/auth/login` | Вход (`remember_me` — persistent-cookie) |
+| `POST` | `/auth/logout` | Выход текущей сессии |
+| `POST` | `/auth/logout-all` | Выход со всех устройств |
+| `GET` | `/auth/me` | Текущий пользователь |
+| `GET` | `/auth/sessions` | Активные сессии пользователя |
+| `DELETE` | `/auth/sessions/{id}` | Завершить свою сессию |
+| `POST` | `/auth/password` | Смена пароля |
+
+Неудачные попытки входа ограничены: `AUTH_LOGIN_RATE_LIMIT` ошибок за
+`AUTH_LOGIN_RATE_WINDOW_SECONDS` на пару «email + IP» (по умолчанию 10 за
+15 минут). Ограничение действует в пределах процесса; при нескольких
+uvicorn-воркерах его нужно вынести в Redis.
+
+### Пример: регистрация, запуск и выход
+
+```bash
+# Регистрация (cookie сохраняется в cookies.txt)
+curl -c cookies.txt -X POST http://127.0.0.1:8000/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"password123","remember_me":true}'
+
+# Проверка текущего пользователя
+curl -b cookies.txt http://127.0.0.1:8000/auth/me
+
+# Создание запуска
+curl -b cookies.txt -X POST http://127.0.0.1:8000/workflow \
+  -H "Content-Type: application/json" \
+  -d '{
+        "request": "Подготовь базовый план тренировок.",
+        "user_data": {
+          "goal": "общая физическая форма",
+          "age": 30,
+          "experience_level": "beginner",
+          "days_per_week": 3,
+          "minutes_per_session": 45
+        }
+      }'
+
+# Выход
+curl -b cookies.txt -X POST http://127.0.0.1:8000/auth/logout
+```
 
 ## Использование API
 
@@ -429,29 +509,12 @@ curl http://127.0.0.1:8000/ready
 # {"status":"ok","checks":{"database":"ok","redis":"ok"}}
 ```
 
-Запуск workflow:
+Ответ на создание запуска — `202 Accepted` с `run_id` и статусом `queued`.
+
+Получение статуса (только своего запуска):
 
 ```bash
-curl -X POST http://127.0.0.1:8000/workflow \
-  -H "Content-Type: application/json" \
-  -d '{
-        "request": "Подготовь базовый план тренировок.",
-        "user_data": {
-          "goal": "общая физическая форма",
-          "age": 30,
-          "experience_level": "beginner",
-          "days_per_week": 3,
-          "minutes_per_session": 45
-        }
-      }'
-```
-
-Ответ: `202 Accepted` с `run_id` и статусом `queued`.
-
-Получение статуса:
-
-```bash
-curl http://127.0.0.1:8000/workflow/<run_id>
+curl -b cookies.txt http://127.0.0.1:8000/workflow/<run_id>
 ```
 
 Поле `status` принимает значения `queued`, `running`, `completed`, `failed`,
@@ -459,23 +522,32 @@ curl http://127.0.0.1:8000/workflow/<run_id>
 отчёт безопасности и предупреждения. Дополнительно возвращаются `user_data`
 и временные метки `created_at`, `started_at`, `finished_at`.
 
-Список запусков (история) с фильтром и пагинацией:
+Список своих запусков (история) с фильтром и пагинацией:
 
 ```bash
-curl "http://127.0.0.1:8000/workflow?limit=20&offset=0"
+curl -b cookies.txt "http://127.0.0.1:8000/workflow?limit=20&offset=0"
 # {"items":[{"run_id":"...","status":"completed","request":"..."}],"total":1}
 
-curl "http://127.0.0.1:8000/workflow?status=failed&limit=10"
+curl -b cookies.txt "http://127.0.0.1:8000/workflow?status=failed&limit=10"
 ```
+
+Чужой или несуществующий `run_id` возвращает `404`, а запрос без cookie — `401`.
 
 ## Веб-интерфейс
 
-Интерфейс состоит из двух разделов:
+До входа доступен экран аутентификации: вкладки «Вход» и «Регистрация»,
+«Запомнить меня», клиентская валидация и понятные ошибки сервера. После входа
+открывается рабочая область из двух разделов:
 
 - **Новый план** — запрос с примерами, профиль (цель, уровень, метрики, ограничения),
   клиентская валидация, прогресс выполнения агентов и экран результата.
-- **История** — все запуски из базы с фильтром по статусу, обновлением и загрузкой
+- **История** — только ваши запуски с фильтром по статусу, обновлением и загрузкой
   следующих страниц; любой запуск можно открыть и посмотреть повторно.
+
+В карточке аккаунта (сайдбар на десктопе, кнопка в шапке на мобильном) доступны
+смена пароля, список активных сессий с пометкой текущего устройства, отзыв
+отдельных сессий и выход со всех устройств. Истёкшая сессия автоматически
+возвращает на экран входа с пояснением.
 
 На экране результата доступны: недельный план, замечания проверки безопасности,
 предположения и ограничения, предупреждения, сырой JSON, копирование и скачивание
@@ -507,6 +579,10 @@ docker compose logs -f frontend
   (`backend` должен быть `healthy`); при `npm run dev` убедитесь, что Vite
   проксирует запросы на `http://127.0.0.1:8000`.
 - **Ошибка CORS при отдельном домене фронтенда** — добавьте его origin в `CORS_ORIGINS`.
+- **API возвращает `401`** — истекла или отсутствует cookie сессии; войдите заново.
+  При отдельном домене API cookie должна быть same-site, иначе браузер её не отправит.
+- **Вход блокируется с `429`** — сработал лимит неудачных попыток; подождите
+  `AUTH_LOGIN_RATE_WINDOW_SECONDS` или перезапустите backend (лимитер in-memory).
 - **Не открывается `http://localhost:8080`** — посмотрите `docker compose ps`:
   контейнер `frontend` публикует `FRONTEND_PORT`; при занятом порте измените его в `.env`.
 
@@ -514,12 +590,20 @@ docker compose logs -f frontend
 
 - LLM может предлагать план, но не получает неограниченного доступа к действиям.
 - `SafetyChecker` — учебные программные правила, а не медицинская диагностика.
+- Пароли хранятся только в виде scrypt-хешей, сессионные токены — только в виде
+  SHA-256 хешей. Cookie `HttpOnly` + `SameSite=Lax`; в production — `Secure`.
+- Неудачные попытки входа ограничены в рамках процесса; для горизонтального
+  масштабирования лимитер нужно перенести в Redis.
+- Email-верификация, восстановление пароля по почте, 2FA и OAuth не реализованы:
+  для них нужен почтовый провайдер или внешняя интеграция.
 - В публичные ответы API не попадают traceback и секреты.
 - Перед публикацией убедитесь, что `.env` не попал в репозиторий.
+- Legacy-запуски без владельца остаются в БД, но не показываются пользователям.
 
 ## Направления дальнейшего развития
 
-- Регистрация и авторизация пользователей.
+- Подтверждение email и сброс пароля по почте.
+- Двухфакторная аутентификация и вход через OAuth-провайдеров.
 - Интеграции с Apple Health и Google Fit.
 - Дополнительные агенты (питание, прогресс, восстановление).
 - Автоматический анализ прогресса по расписанию.

@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app import api
 from app.api import create_app
 from app.db.repositories import workflow_repository
-from app.db.session import create_all
 
 
 def _full_data() -> dict:
@@ -35,9 +34,21 @@ def _make_client():
     return TestClient(app), engine, factory, path
 
 
-def _seed_runs(engine, factory, statuses) -> list[str]:
+def _register(client, email: str = "user@example.com") -> dict:
+    response = client.post(
+        "/auth/register",
+        json={
+            "email": email,
+            "password": "password123",
+            "remember_me": True,
+        },
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def _seed_runs(factory, statuses, user_id: str) -> list[str]:
     async def seed() -> list[str]:
-        await create_all(engine)
         run_ids = []
         async with factory() as session:
             for index, status in enumerate(statuses):
@@ -46,9 +57,9 @@ def _seed_runs(engine, factory, statuses) -> list[str]:
                     request=f"Запуск {index}",
                     user_data={"goal": "сила"},
                     status=status,
+                    user_id=user_id,
                 )
                 run_ids.append(run.id)
-        await engine.dispose()
         return run_ids
 
     return asyncio.run(seed())
@@ -76,6 +87,7 @@ def test_create_workflow_queued(monkeypatch) -> None:
     client, engine, factory, path = _make_client()
     try:
         with client:
+            _register(client)
             created = client.post(
                 "/workflow",
                 json={
@@ -106,6 +118,7 @@ def test_enqueue_failure_returns_503(monkeypatch) -> None:
     client, engine, factory, path = _make_client()
     try:
         with client:
+            _register(client)
             response = client.post(
                 "/workflow",
                 json={
@@ -124,6 +137,7 @@ def test_get_missing_run_404() -> None:
     client, engine, factory, path = _make_client()
     try:
         with client:
+            _register(client)
             response = client.get("/workflow/does-not-exist")
         assert response.status_code == 404
     finally:
@@ -157,8 +171,11 @@ def test_ready_reports_degraded_without_redis(monkeypatch) -> None:
 def test_list_workflows_returns_total_and_limit() -> None:
     client, engine, factory, path = _make_client()
     try:
-        seed_ids = _seed_runs(engine, factory, ["completed", "failed", "queued"])
         with client:
+            user = _register(client)
+            seed_ids = _seed_runs(
+                factory, ["completed", "failed", "queued"], user["id"]
+            )
             all_runs = client.get("/workflow")
             limited = client.get("/workflow", params={"limit": 2})
             filtered = client.get("/workflow", params={"status": "failed"})
@@ -190,6 +207,7 @@ def test_get_workflow_includes_timestamps_and_user_data(monkeypatch) -> None:
     client, engine, factory, path = _make_client()
     try:
         with client:
+            _register(client)
             created = client.post(
                 "/workflow",
                 json={"request": "План на неделю", "user_data": _full_data()},
@@ -221,6 +239,83 @@ def test_cors_preflight_allows_dev_origin() -> None:
             response.headers["access-control-allow-origin"]
             == "http://localhost:5173"
         )
+    finally:
+        asyncio.run(engine.dispose())
+        if os.path.exists(path):
+            os.remove(path)
+
+
+def test_workflow_requires_auth() -> None:
+    client, engine, factory, path = _make_client()
+    try:
+        with client:
+            created = client.post(
+                "/workflow",
+                json={"request": "План", "user_data": _full_data()},
+            )
+            listed = client.get("/workflow")
+            opened = client.get("/workflow/anything")
+
+        assert created.status_code == 401
+        assert listed.status_code == 401
+        assert opened.status_code == 401
+    finally:
+        asyncio.run(engine.dispose())
+        if os.path.exists(path):
+            os.remove(path)
+
+
+def test_history_isolated_between_users(monkeypatch) -> None:
+    async def fake_enqueue(run_id: str) -> None:
+        return None
+
+    monkeypatch.setattr(api, "enqueue_workflow", fake_enqueue)
+
+    client, engine, factory, path = _make_client()
+    try:
+        with client:
+            _register(client, "first@example.com")
+            created = client.post(
+                "/workflow",
+                json={"request": "План первого", "user_data": _full_data()},
+            )
+            run_id = created.json()["run_id"]
+
+            second = TestClient(client.app)
+            with second:
+                _register(second, "second@example.com")
+                listed = second.get("/workflow")
+                opened = second.get(f"/workflow/{run_id}")
+
+            assert listed.status_code == 200
+            assert listed.json()["total"] == 0
+            assert opened.status_code == 404
+    finally:
+        asyncio.run(engine.dispose())
+        if os.path.exists(path):
+            os.remove(path)
+
+
+def test_legacy_run_without_owner_is_hidden() -> None:
+    client, engine, factory, path = _make_client()
+    try:
+        with client:
+            _register(client)
+
+            async def seed() -> str:
+                async with factory() as session:
+                    run = await workflow_repository.create_run(
+                        session,
+                        request="Старый запуск",
+                        user_data={},
+                        status="completed",
+                    )
+                    return run.id
+
+            run_id = asyncio.run(seed())
+
+            assert client.get("/workflow").json()["total"] == 0
+            assert client.get(f"/workflow/{run_id}").status_code == 404
     finally:
         asyncio.run(engine.dispose())
         if os.path.exists(path):

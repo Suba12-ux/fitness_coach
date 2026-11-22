@@ -7,11 +7,13 @@ from app.db.session import (
     create_all,
     get_session,
 )
-from app.db.models.workflow import WorkflowRun
+from app.db.models import User, UserSession, WorkflowRun
 
 __all__ = [
     "AsyncSessionLocal",
     "Base",
+    "User",
+    "UserSession",
     "WorkflowRun",
     "async_engine",
     "build_engine",

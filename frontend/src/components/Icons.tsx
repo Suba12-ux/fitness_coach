@@ -240,3 +240,42 @@ export function IconLightbulb(props: IconProps) {
     </Svg>
   );
 }
+
+export function IconUser(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4.5 20a7.5 7.5 0 0 1 15 0" />
+    </Svg>
+  );
+}
+
+export function IconLogOut(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4" />
+      <path d="M15 8l4 4-4 4" />
+      <path d="M19 12H9" />
+    </Svg>
+  );
+}
+
+export function IconKey(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="8" cy="15" r="4" />
+      <path d="m11 12 8-8" />
+      <path d="m16 7 2 2" />
+      <path d="m18 5 2 2" />
+    </Svg>
+  );
+}
+
+export function IconMonitor(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="4" width="18" height="12" rx="2" />
+      <path d="M8 20h8M12 16v4" />
+    </Svg>
+  );
+}
