@@ -29,7 +29,7 @@ x-app-env: &app-env
   AUTH_SESSION_TTL_DAYS: ${AUTH_SESSION_TTL_DAYS:-7}
   AUTH_LOGIN_RATE_LIMIT: ${AUTH_LOGIN_RATE_LIMIT:-10}
   AUTH_LOGIN_RATE_WINDOW_SECONDS: ${AUTH_LOGIN_RATE_WINDOW_SECONDS:-900}
-  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8081,http://127.0.0.1:8081}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
 
 services:
   postgres:
@@ -124,7 +124,7 @@ services:
     image: ${DOCKERHUB_IMAGE:-semomov/sensei}:frontend-${IMAGE_TAG:?IMAGE_TAG must be set}
     restart: unless-stopped
     ports:
-      - "${FRONTEND_PORT:-8081}:80"
+      - "${FRONTEND_PORT:-8080}:80"
     depends_on:
       backend:
         condition: service_healthy

@@ -149,7 +149,7 @@ jobs:
 
           http_check() {
             if command -v curl >/dev/null 2>&1; then
-              curl -fsS "http://127.0.0.1:8081$1" >/dev/null
+              curl -fsS "http://127.0.0.1:8080$1" >/dev/null
             else
               docker compose -f docker-compose.production.yml exec -T frontend \
                 wget -q -O /dev/null "http://127.0.0.1$1"
