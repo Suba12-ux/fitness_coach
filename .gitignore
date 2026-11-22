@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Локальные данные
+*.db
+*.sqlite3
+
+# Секреты
+.env
+
+# IDE
+.idea/
+.vscode/
+
+# Frontend
+node_modules/
+frontend/dist/
+frontend/.vite/

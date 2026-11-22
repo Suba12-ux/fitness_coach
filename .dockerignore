@@ -1,0 +1,22 @@
+# Общий контекст сборки backend-образа (корень репозитория),
+# потому что в образ встраивается собранный фронтенд.
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+**/.mypy_cache
+**/.venv
+**/venv
+**/*.egg-info
+**/*.db
+**/*.sqlite3
+frontend/node_modules
+frontend/dist
+frontend/.vite
+plan.md
+README.md
