@@ -18,6 +18,9 @@ from app.db.models.user import User
 from app.db.repositories import workflow_repository
 from app.db.session import AsyncSessionLocal, async_engine, create_all
 from app.queue import enqueue_workflow
+from app.routers.profiles import router as profile_router
+from app.routers.programs import router as programs_router
+from app.routers.workouts import router as workouts_router
 from app.schemas.api import (
     WorkflowList,
     WorkflowListItem,
@@ -82,6 +85,9 @@ def create_app(session_factory=None, engine=None) -> FastAPI:
     )
 
     app.include_router(auth_router)
+    app.include_router(profile_router)
+    app.include_router(programs_router)
+    app.include_router(workouts_router)
 
     @app.get("/health")
     def health() -> Dict[str, str]:

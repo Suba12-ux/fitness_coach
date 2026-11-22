@@ -387,4 +387,24 @@ class Supervisor:
                 raise ValueError(
                     f"Некорректная длительность тренировки: {session.duration_min} мин."
                 )
+            if len(session.exercises) > 20:
+                raise ValueError(
+                    f"Слишком много упражнений в тренировке: {len(session.exercises)}."
+                )
+            for exercise in session.exercises:
+                if not exercise.name.strip():
+                    raise ValueError("У упражнения не указано название.")
+                for label, value in (
+                    ("подходы", exercise.sets),
+                    ("повторения", exercise.reps),
+                    ("длительность", exercise.duration_min),
+                ):
+                    if value is not None and value <= 0:
+                        raise ValueError(
+                            f"Некорректные {label} упражнения «{exercise.name}»: {value}."
+                        )
+                if exercise.weight_kg is not None and exercise.weight_kg <= 0:
+                    raise ValueError(
+                        f"Некорректный вес упражнения «{exercise.name}»: {exercise.weight_kg}."
+                    )
         return plan

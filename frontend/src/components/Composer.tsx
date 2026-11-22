@@ -1,7 +1,7 @@
-import { useState, type FormEvent } from "react";
+import type { FormEvent } from "react";
 
 import type { SystemStatus } from "../hooks/useSystemStatus";
-import { FORM_EXAMPLES, GOAL_SUGGESTIONS, type FormExample } from "../lib/examples";
+import { FORM_EXAMPLES, type FormExample } from "../lib/examples";
 import {
   MAX_REQUEST_LENGTH,
   type FormErrors,
@@ -10,12 +10,11 @@ import {
 import {
   IconAlert,
   IconArrowRight,
-  IconClose,
   IconLightbulb,
-  IconPlus,
   IconShield,
   IconTarget,
 } from "./Icons";
+import { FieldError, ProfileFields } from "./ProfileFields";
 
 interface ComposerProps {
   form: FormState;
@@ -28,71 +27,6 @@ interface ComposerProps {
   onSubmit: () => void;
 }
 
-interface StepperProps {
-  id: string;
-  value: number;
-  min: number;
-  max: number;
-  step?: number;
-  unit: string;
-  errorId?: string;
-  onChange: (value: number) => void;
-}
-
-function Stepper({
-  id,
-  value,
-  min,
-  max,
-  step = 1,
-  unit,
-  errorId,
-  onChange,
-}: StepperProps) {
-  return (
-    <div
-      className="stepper"
-      id={id}
-      role="group"
-      aria-labelledby={`${id}-label`}
-      aria-describedby={errorId}
-      aria-invalid={errorId ? true : undefined}
-    >
-      <button
-        type="button"
-        onClick={() => onChange(Math.max(min, value - step))}
-        disabled={value <= min}
-        aria-label={`Уменьшить: ${unit}`}
-      >
-        −
-      </button>
-      <span className="stepper__value" aria-live="polite">
-        {value}
-        <span className="stepper__unit">{unit}</span>
-      </span>
-      <button
-        type="button"
-        onClick={() => onChange(Math.min(max, value + step))}
-        disabled={value >= max}
-        aria-label={`Увеличить: ${unit}`}
-      >
-        +
-      </button>
-    </div>
-  );
-}
-
-function FieldError({ id, message }: { id: string; message?: string }) {
-  if (!message) {
-    return null;
-  }
-  return (
-    <span className="field__error" id={id} role="alert">
-      {message}
-    </span>
-  );
-}
-
 export function Composer({
   form,
   errors,
@@ -103,28 +37,8 @@ export function Composer({
   onExample,
   onSubmit,
 }: ComposerProps) {
-  const [draftLimitation, setDraftLimitation] = useState("");
-
-  const addLimitation = () => {
-    const value = draftLimitation.trim().replace(/,$/, "");
-    if (!value) {
-      return;
-    }
-    if (!form.limitations.some((item) => item === value)) {
-      onChange({ limitations: [...form.limitations, value] });
-    }
-    setDraftLimitation("");
-  };
-
-  const removeLimitation = (value: string) => {
-    onChange({
-      limitations: form.limitations.filter((item) => item !== value),
-    });
-  };
-
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
-    addLimitation();
     onSubmit();
   };
 
@@ -208,210 +122,12 @@ export function Composer({
             <span className="pill">Шаг 2 из 2</span>
           </div>
 
-          <div className="form-grid">
-            <div className="field field--wide">
-              <label className="field__label" htmlFor="goal">
-                Цель тренировок
-              </label>
-              <input
-                id="goal"
-                className="input"
-                list="goal-suggestions"
-                placeholder="Например: общая физическая форма"
-                value={form.goal}
-                onChange={(event) => onChange({ goal: event.target.value })}
-                aria-invalid={Boolean(errors.goal)}
-                aria-describedby={errors.goal ? "goal-error" : undefined}
-              />
-              <datalist id="goal-suggestions">
-                {GOAL_SUGGESTIONS.map((goal) => (
-                  <option key={goal} value={goal} />
-                ))}
-              </datalist>
-              <FieldError id="goal-error" message={errors.goal} />
-            </div>
-
-            <div className="field field--wide">
-              <span className="field__label" id="experience-label">
-                Уровень подготовки
-              </span>
-              <div
-                className="segmented"
-                role="group"
-                aria-labelledby="experience-label"
-                aria-describedby={
-                  errors.experience ? "experience-error" : undefined
-                }
-              >
-                {[
-                  { value: "beginner", label: "Новичок" },
-                  { value: "intermediate", label: "Средний" },
-                  { value: "advanced", label: "Продвинутый" },
-                ].map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    className={
-                      form.experience === option.value ? "is-active" : ""
-                    }
-                    aria-pressed={form.experience === option.value}
-                    onClick={() =>
-                      onChange({
-                        experience: option.value as FormState["experience"],
-                      })
-                    }
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-              <FieldError id="experience-error" message={errors.experience} />
-            </div>
-          </div>
-
-          <div className="form-grid form-grid--metrics">
-            <div className="field">
-              <label className="field__label" htmlFor="age">
-                Возраст <span className="field__optional">необязательно</span>
-              </label>
-              <input
-                id="age"
-                className="input"
-                inputMode="numeric"
-                placeholder="30"
-                value={form.age}
-                onChange={(event) => onChange({ age: event.target.value })}
-                aria-invalid={Boolean(errors.age)}
-                aria-describedby={errors.age ? "age-error" : undefined}
-              />
-              <FieldError id="age-error" message={errors.age} />
-            </div>
-            <div className="field">
-              <label className="field__label" htmlFor="weight">
-                Вес, кг <span className="field__optional">необязательно</span>
-              </label>
-              <input
-                id="weight"
-                className="input"
-                inputMode="numeric"
-                placeholder="75"
-                value={form.weight}
-                onChange={(event) => onChange({ weight: event.target.value })}
-                aria-invalid={Boolean(errors.weight)}
-                aria-describedby={errors.weight ? "weight-error" : undefined}
-              />
-              <FieldError id="weight-error" message={errors.weight} />
-            </div>
-            <div className="field">
-              <label className="field__label" htmlFor="height">
-                Рост, см <span className="field__optional">необязательно</span>
-              </label>
-              <input
-                id="height"
-                className="input"
-                inputMode="numeric"
-                placeholder="178"
-                value={form.height}
-                onChange={(event) => onChange({ height: event.target.value })}
-                aria-invalid={Boolean(errors.height)}
-                aria-describedby={errors.height ? "height-error" : undefined}
-              />
-              <FieldError id="height-error" message={errors.height} />
-            </div>
-          </div>
-
-          <div className="form-grid form-grid--schedule">
-            <div className="field">
-              <span className="field__label" id="days-label">
-                Тренировок в неделю
-              </span>
-              <Stepper
-                id="days"
-                value={form.days}
-                min={1}
-                max={6}
-                unit="дн."
-                errorId={errors.days ? "days-error" : undefined}
-                onChange={(value) => onChange({ days: value })}
-              />
-              <FieldError id="days-error" message={errors.days} />
-            </div>
-            <div className="field">
-              <span className="field__label" id="minutes-label">
-                Минут на занятие
-              </span>
-              <Stepper
-                id="minutes"
-                value={form.minutes}
-                min={15}
-                max={180}
-                step={5}
-                unit="мин"
-                errorId={errors.minutes ? "minutes-error" : undefined}
-                onChange={(value) => onChange({ minutes: value })}
-              />
-              <FieldError id="minutes-error" message={errors.minutes} />
-            </div>
-          </div>
-
-          <div className="field form-limitations">
-            <label className="field__label" htmlFor="limitations">
-              Ограничения{" "}
-              <span className="field__optional">если есть</span>
-            </label>
-            <div className="tag-input">
-              {form.limitations.map((item) => (
-                <span key={item} className="chip chip--tag">
-                  {item}
-                  <button
-                    type="button"
-                    className="chip__remove"
-                    onClick={() => removeLimitation(item)}
-                    aria-label={`Удалить ограничение «${item}»`}
-                  >
-                    <IconClose width={12} height={12} />
-                  </button>
-                </span>
-              ))}
-              <input
-                id="limitations"
-                placeholder={
-                  form.limitations.length
-                    ? "Добавить ещё…"
-                    : "Например: боль в колене, запрет на бег"
-                }
-                value={draftLimitation}
-                onChange={(event) => setDraftLimitation(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === ",") {
-                    event.preventDefault();
-                    addLimitation();
-                  } else if (
-                    event.key === "Backspace" &&
-                    !draftLimitation &&
-                    form.limitations.length
-                  ) {
-                    removeLimitation(
-                      form.limitations[form.limitations.length - 1],
-                    );
-                  }
-                }}
-                onBlur={addLimitation}
-              />
-              <button
-                type="button"
-                className="chip__remove"
-                onClick={addLimitation}
-                aria-label="Добавить ограничение"
-              >
-                <IconPlus width={13} height={13} />
-              </button>
-            </div>
-            <span className="field__hint">
-              Enter или запятая — добавить. Ограничения учитываются в плане и
-              проверке безопасности.
-            </span>
-          </div>
+          <ProfileFields
+            values={form}
+            errors={errors}
+            onChange={onChange}
+            disabled={busy}
+          />
 
           {apiOffline ? (
             <div className="notice-inline notice-inline--danger" role="status">

@@ -16,14 +16,22 @@ import { useTheme } from "../hooks/useTheme";
 import { useToasts } from "../hooks/useToasts";
 import { copyText } from "../lib/download";
 import type { FormExample } from "../lib/examples";
+import { applyProfileToFields } from "../lib/profileForm";
+import { hashFor, parseRoute, type Route } from "../lib/router";
 import { isInFlight, isTerminal } from "../lib/status";
 import {
   EMPTY_FORM,
   buildPayload,
   formFromUserData,
+  isFormPristine,
   validateForm,
   type FormState,
 } from "../lib/validation";
+import { ProfilePage } from "./ProfilePage";
+import { ProgramPage } from "./ProgramPage";
+import { ProgramsPage } from "./ProgramsPage";
+import { WorkoutPage } from "./WorkoutPage";
+import { WorkoutsPage } from "./WorkoutsPage";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error
@@ -31,23 +39,21 @@ function errorMessage(error: unknown): string {
     : "Не удалось выполнить запрос.";
 }
 
-interface Route {
-  view: View;
-  runId: string | null;
-}
-
-function parseRoute(): Route {
-  const hash = window.location.hash;
-  if (hash.startsWith("#run/")) {
-    return {
-      view: "compose",
-      runId: decodeURIComponent(hash.slice("#run/".length)),
-    };
+function viewFromRoute(route: Route): View {
+  switch (route.name) {
+    case "generations":
+      return "history";
+    case "programs":
+    case "program":
+      return "programs";
+    case "workouts":
+    case "workout":
+      return "workouts";
+    case "profile":
+      return "profile";
+    default:
+      return "compose";
   }
-  if (hash === "#history") {
-    return { view: "history", runId: null };
-  }
-  return { view: "compose", runId: null };
 }
 
 function updateHash(hash: string): void {
@@ -57,6 +63,8 @@ function updateHash(hash: string): void {
   }
 }
 
+const initialRoute = parseRoute(window.location.hash);
+
 export default function Workspace() {
   const { theme, setTheme } = useTheme();
   const { toasts, notify, dismiss } = useToasts();
@@ -64,21 +72,29 @@ export default function Workspace() {
   const auth = useAuth();
   const email = auth.user?.email ?? "";
 
-  const [view, setView] = useState<View>(() => parseRoute().view);
+  const [route, setRoute] = useState<Route>(initialRoute);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [run, setRun] = useState<WorkflowResponse | null>(null);
   const [busy, setBusy] = useState(false);
-  const [loadingRun, setLoadingRun] = useState(() =>
-    Boolean(parseRoute().runId),
+  const [loadingRun, setLoadingRun] = useState(
+    initialRoute.name === "run",
   );
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [attempted, setAttempted] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
 
+  const view = viewFromRoute(route);
+
   const errors = useMemo(
     () => (attempted ? validateForm(form) : {}),
     [attempted, form],
   );
+
+  const navigate = useCallback((next: Route) => {
+    setRoute(next);
+    updateHash(hashFor(next));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
 
   const loadRun = useCallback(
     async (runId: string) => {
@@ -86,13 +102,13 @@ export default function Workspace() {
       try {
         const loaded = await api.getWorkflow(runId);
         setRun(loaded);
-        setView("compose");
+        setRoute({ name: "run", id: loaded.run_id });
         setLaunchError(null);
-        updateHash(`#run/${loaded.run_id}`);
+        updateHash(hashFor({ name: "run", id: loaded.run_id }));
       } catch (error) {
         notify(errorMessage(error), "error");
         setRun(null);
-        setView("compose");
+        setRoute({ name: "compose", id: null });
         updateHash("");
       } finally {
         setLoadingRun(false);
@@ -102,19 +118,18 @@ export default function Workspace() {
   );
 
   useEffect(() => {
-    const route = parseRoute();
-    if (route.view === "history") {
-      setView("history");
+    if (initialRoute.name === "run" && initialRoute.id) {
+      void loadRun(initialRoute.id);
     }
-    if (route.runId) {
-      void loadRun(route.runId);
-    }
+    // Загружаем запуск из адреса один раз при первом открытии рабочей области.
+  }, []);
 
+  useEffect(() => {
     const sync = () => {
-      const next = parseRoute();
-      setView(next.view);
-      if (next.runId) {
-        void loadRun(next.runId);
+      const next = parseRoute(window.location.hash);
+      setRoute(next);
+      if (next.name === "run" && next.id) {
+        void loadRun(next.id);
         return;
       }
       setRun(null);
@@ -124,16 +139,27 @@ export default function Workspace() {
     return () => window.removeEventListener("hashchange", sync);
   }, [loadRun]);
 
-  const selectView = useCallback(
-    (next: View) => {
-      setView(next);
-      updateHash(
-        next === "history" ? "#history" : run ? `#run/${run.run_id}` : "",
-      );
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    },
-    [run],
-  );
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getProfile()
+      .then((profile) => {
+        if (cancelled) {
+          return;
+        }
+        setForm((current) =>
+          isFormPristine(current)
+            ? applyProfileToFields(current, profile)
+            : current,
+        );
+      })
+      .catch(() => {
+        // Профиля нет или он недоступен — форма остаётся пустой.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const launch = useCallback(
     async (payload: WorkflowPayload) => {
@@ -143,7 +169,8 @@ export default function Workspace() {
         const created = await api.createWorkflow(payload);
         setRun(created);
         setAttempted(false);
-        updateHash(`#run/${created.run_id}`);
+        setRoute({ name: "run", id: created.run_id });
+        updateHash(hashFor({ name: "run", id: created.run_id }));
         notify("Запрос принят — агенты приступили к работе.", "info");
         system.refresh();
       } catch (error) {
@@ -200,10 +227,8 @@ export default function Workspace() {
     setRun(null);
     setLaunchError(null);
     setAttempted(false);
-    setView("compose");
-    updateHash("");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }, []);
+    navigate({ name: "compose", id: null });
+  }, [navigate]);
 
   const handleRefine = useCallback(() => {
     if (!run) {
@@ -212,13 +237,12 @@ export default function Workspace() {
     setForm(formFromUserData(run.request, run.user_data));
     setRun(null);
     setAttempted(false);
-    setView("compose");
-    updateHash("");
+    navigate({ name: "compose", id: null });
     notify("Данные из запуска перенесены в форму.", "info");
     window.setTimeout(() => {
       document.getElementById("request")?.focus();
     }, 120);
-  }, [notify, run]);
+  }, [navigate, notify, run]);
 
   const handleRetry = useCallback(() => {
     if (!run) {
@@ -231,8 +255,8 @@ export default function Workspace() {
     setRun(loaded);
     setLaunchError(null);
     setLoadingRun(false);
-    setView("compose");
-    updateHash(`#run/${loaded.run_id}`);
+    setRoute({ name: "run", id: loaded.run_id });
+    updateHash(hashFor({ name: "run", id: loaded.run_id }));
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
@@ -254,14 +278,161 @@ export default function Workspace() {
         handleNewPlan();
         return;
       }
-      selectView("history");
+      if (next === "history") {
+        navigate({ name: "generations", id: null });
+        return;
+      }
+      if (next === "programs") {
+        navigate({ name: "programs", id: null });
+        return;
+      }
+      if (next === "workouts") {
+        navigate({ name: "workouts", id: null });
+        return;
+      }
+      navigate({ name: "profile", id: null });
     },
-    [handleNewPlan, selectView],
+    [handleNewPlan, navigate],
   );
+
+  const openProgram = useCallback(
+    (programId: string) => {
+      navigate({ name: "program", id: programId });
+    },
+    [navigate],
+  );
+
+  const openWorkout = useCallback(
+    (workoutId: string) => {
+      navigate({ name: "workout", id: workoutId });
+    },
+    [navigate],
+  );
+
+  const createStandaloneWorkout = useCallback(async () => {
+    const title = window.prompt(
+      "Название самостоятельной тренировки",
+      "Самостоятельная тренировка",
+    );
+    if (title === null) {
+      return;
+    }
+    try {
+      const created = await api.createWorkout({
+        title: title.trim() || "Самостоятельная тренировка",
+      });
+      notify("Тренировка начата.", "info");
+      openWorkout(created.id);
+    } catch (error) {
+      notify(errorMessage(error), "error");
+    }
+  }, [notify, openWorkout]);
 
   const openAccount = useCallback(() => setAccountOpen(true), []);
   const closeAccount = useCallback(() => setAccountOpen(false), []);
   const handleLogout = useCallback(() => void auth.logout(), [auth]);
+
+  const renderPage = () => {
+    if (route.name === "generations") {
+      return (
+        <HistoryList
+          onOpen={handleOpenRun}
+          onCreate={handleNewPlan}
+          notify={notify}
+        />
+      );
+    }
+    if (route.name === "programs") {
+      return (
+        <ProgramsPage
+          notify={notify}
+          onOpenProgram={openProgram}
+          onCreatePlan={handleNewPlan}
+        />
+      );
+    }
+    if (route.name === "program" && route.id) {
+      return (
+        <ProgramPage
+          programId={route.id}
+          notify={notify}
+          onBack={() => navigate({ name: "programs", id: null })}
+          onOpenWorkout={openWorkout}
+          onOpenRun={(runId) => void loadRun(runId)}
+        />
+      );
+    }
+    if (route.name === "workouts") {
+      return (
+        <WorkoutsPage
+          notify={notify}
+          onOpenWorkout={openWorkout}
+          onCreateWorkout={() => void createStandaloneWorkout()}
+        />
+      );
+    }
+    if (route.name === "workout" && route.id) {
+      return (
+        <WorkoutPage
+          workoutId={route.id}
+          notify={notify}
+          onBack={() => navigate({ name: "workouts", id: null })}
+          onOpenProgram={openProgram}
+        />
+      );
+    }
+    if (route.name === "profile") {
+      return <ProfilePage notify={notify} />;
+    }
+
+    if (loadingRun) {
+      return (
+        <section className="run-shell">
+          <div className="card progress-card">
+            <span className="status status--info">
+              <span className="spinner" aria-hidden="true" />
+              Загрузка
+            </span>
+            <h1>Открываем запуск</h1>
+            <p>
+              Получаем сохранённый результат из базы данных. Это займёт
+              мгновение.
+            </p>
+          </div>
+        </section>
+      );
+    }
+    if (run) {
+      return isTerminal(run.status) ? (
+        <ResultView
+          run={run}
+          onNewPlan={handleNewPlan}
+          onRefine={handleRefine}
+          onRetry={handleRetry}
+          onOpenProgram={openProgram}
+          notify={notify}
+        />
+      ) : (
+        <RunProgress
+          run={run}
+          onNewPlan={handleNewPlan}
+          onCopyId={() => void handleCopyId()}
+        />
+      );
+    }
+    return (
+      <Composer
+        form={form}
+        errors={errors}
+        busy={busy}
+        launchError={launchError}
+        system={system}
+        onChange={handleChange}
+        onExample={handleExample}
+        onSubmit={handleSubmit}
+      />
+    );
+  };
 
   return (
     <div className="app">
@@ -284,56 +455,7 @@ export default function Workspace() {
           userEmail={email}
           onOpenAccount={openAccount}
         />
-        <div className="page">
-          {view === "history" ? (
-            <HistoryList
-              onOpen={handleOpenRun}
-              onCreate={handleNewPlan}
-              notify={notify}
-            />
-          ) : loadingRun ? (
-            <section className="run-shell">
-              <div className="card progress-card">
-                <span className="status status--info">
-                  <span className="spinner" aria-hidden="true" />
-                  Загрузка
-                </span>
-                <h1>Открываем запуск</h1>
-                <p>
-                  Получаем сохранённый результат из базы данных. Это займёт
-                  мгновение.
-                </p>
-              </div>
-            </section>
-          ) : run ? (
-            isTerminal(run.status) ? (
-              <ResultView
-                run={run}
-                onNewPlan={handleNewPlan}
-                onRefine={handleRefine}
-                onRetry={handleRetry}
-                notify={notify}
-              />
-            ) : (
-              <RunProgress
-                run={run}
-                onNewPlan={handleNewPlan}
-                onCopyId={() => void handleCopyId()}
-              />
-            )
-          ) : (
-            <Composer
-              form={form}
-              errors={errors}
-              busy={busy}
-              launchError={launchError}
-              system={system}
-              onChange={handleChange}
-              onExample={handleExample}
-              onSubmit={handleSubmit}
-            />
-          )}
-        </div>
+        <div className="page">{renderPage()}</div>
       </main>
 
       <MobileNav view={view} onSelectView={handleSelectView} />

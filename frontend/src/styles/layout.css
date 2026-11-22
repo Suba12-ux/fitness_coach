@@ -1,6 +1,7 @@
 .app {
   display: flex;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 /* ------------------------------------------------------------------ sidebar */
@@ -13,6 +14,7 @@
   gap: 26px;
   width: 268px;
   height: 100vh;
+  height: 100dvh;
   padding: 28px 20px 22px;
   border-right: 1px solid var(--border);
   background: linear-gradient(
@@ -396,15 +398,25 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 12px 18px;
+    padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
     border-bottom: 1px solid var(--border);
     background: color-mix(in srgb, var(--bg) 78%, transparent);
     backdrop-filter: blur(18px);
   }
 
   .topbar .brand {
+    min-width: 0;
     padding: 0;
     gap: 10px;
+  }
+
+  .topbar .brand__name {
+    overflow: hidden;
+    font-size: 15px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .topbar .brand__mark {
@@ -412,10 +424,6 @@
     height: 36px;
     border-radius: 11px;
     font-size: 22px;
-  }
-
-  .topbar .brand__name {
-    font-size: 15px;
   }
 
   .topbar .brand__tag {
@@ -457,11 +465,13 @@
     right: 0;
     z-index: 40;
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4px;
-    padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 2px;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    padding-left: max(8px, env(safe-area-inset-left));
+    padding-right: max(8px, env(safe-area-inset-right));
     border-top: 1px solid var(--border);
-    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
     backdrop-filter: blur(18px);
   }
 
@@ -469,20 +479,38 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 3px;
-    height: 52px;
     justify-content: center;
+    gap: 4px;
+    min-width: 0;
+    min-height: 54px;
+    padding: 6px 2px;
     border: 0;
-    border-radius: 12px;
+    border-radius: 10px;
     background: transparent;
     color: var(--muted);
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 600;
+    line-height: 1.15;
+    text-align: center;
   }
 
   .mobile-nav__item svg {
-    width: 20px;
-    height: 20px;
+    width: 21px;
+    height: 21px;
+    flex: none;
+  }
+
+  .mobile-nav__label {
+    display: -webkit-box;
+    max-width: 100%;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+
+  .mobile-nav__item:active {
+    background: var(--surface-hover);
   }
 
   .mobile-nav__item.is-active {
@@ -491,18 +519,22 @@
   }
 
   .page {
-    padding: 26px 20px calc(92px + env(safe-area-inset-bottom));
+    padding: 26px 20px calc(96px + env(safe-area-inset-bottom));
+    padding-left: max(20px, env(safe-area-inset-left));
+    padding-right: max(20px, env(safe-area-inset-right));
   }
 
   .toasts {
-    bottom: calc(76px + env(safe-area-inset-bottom));
-    right: 16px;
+    bottom: calc(92px + env(safe-area-inset-bottom));
+    right: max(16px, env(safe-area-inset-right));
   }
 }
 
 @media (max-width: 640px) {
   .page {
-    padding: 20px 16px calc(96px + env(safe-area-inset-bottom));
+    padding: 20px 16px calc(98px + env(safe-area-inset-bottom));
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
   }
 
   .card {
@@ -514,5 +546,38 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 14px;
+  }
+}
+
+@media (max-width: 520px) {
+  .topbar__status {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .topbar__status-text {
+    display: none;
+  }
+
+  .topbar .brand__mark {
+    width: 34px;
+    height: 34px;
+    font-size: 21px;
+  }
+
+  .topbar__theme {
+    width: 34px;
+    height: 34px;
+  }
+
+  .page {
+    padding-top: 18px;
+  }
+
+  .toasts {
+    right: max(12px, env(safe-area-inset-right));
+    left: max(12px, env(safe-area-inset-left));
+    width: auto;
   }
 }

@@ -1,13 +1,29 @@
 import type {
   AuthSession,
   ChangePasswordPayload,
+  ExerciseNameList,
+  ExerciseProgressPoint,
   LoginPayload,
+  ProgramCreatePayload,
+  ProgramDetail,
+  ProgramList,
+  ProgramListParams,
+  ProgramUpdatePayload,
+  Profile,
+  ProfilePayload,
   ReadyResponse,
   RegisterPayload,
   User,
   WorkflowList,
   WorkflowPayload,
   WorkflowResponse,
+  WorkoutCreatePayload,
+  WorkoutDetail,
+  WorkoutExercisesPayload,
+  WorkoutList,
+  WorkoutListParams,
+  WorkoutStats,
+  WorkoutUpdatePayload,
 } from "./types";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
@@ -171,6 +187,129 @@ export const api = {
       search.set("status", params.status);
     }
     return request<WorkflowList>(`/workflow?${search.toString()}`);
+  },
+
+  getProfile(): Promise<Profile> {
+    return request<Profile>("/profile");
+  },
+
+  putProfile(payload: ProfilePayload): Promise<Profile> {
+    return request<Profile>("/profile", { method: "PUT", body: payload });
+  },
+
+  patchProfile(payload: Partial<ProfilePayload>): Promise<Profile> {
+    return request<Profile>("/profile", { method: "PATCH", body: payload });
+  },
+
+  createProgram(payload: ProgramCreatePayload): Promise<ProgramDetail> {
+    return request<ProgramDetail>("/programs", {
+      method: "POST",
+      body: payload,
+    });
+  },
+
+  listPrograms(params: ProgramListParams = {}): Promise<ProgramList> {
+    const search = new URLSearchParams();
+    search.set("limit", String(params.limit ?? 20));
+    search.set("offset", String(params.offset ?? 0));
+    if (params.status) {
+      search.set("status", params.status);
+    }
+    return request<ProgramList>(`/programs?${search.toString()}`);
+  },
+
+  getProgram(programId: string): Promise<ProgramDetail> {
+    return request<ProgramDetail>(
+      `/programs/${encodeURIComponent(programId)}`,
+    );
+  },
+
+  patchProgram(
+    programId: string,
+    payload: ProgramUpdatePayload,
+  ): Promise<ProgramDetail> {
+    return request<ProgramDetail>(
+      `/programs/${encodeURIComponent(programId)}`,
+      { method: "PATCH", body: payload },
+    );
+  },
+
+  archiveProgram(programId: string): Promise<void> {
+    return request<void>(`/programs/${encodeURIComponent(programId)}`, {
+      method: "DELETE",
+    });
+  },
+
+  createWorkout(payload: WorkoutCreatePayload): Promise<WorkoutDetail> {
+    return request<WorkoutDetail>("/workouts", {
+      method: "POST",
+      body: payload,
+    });
+  },
+
+  listWorkouts(params: WorkoutListParams = {}): Promise<WorkoutList> {
+    const search = new URLSearchParams();
+    search.set("limit", String(params.limit ?? 20));
+    search.set("offset", String(params.offset ?? 0));
+    if (params.status) {
+      search.set("status", params.status);
+    }
+    if (params.program_id) {
+      search.set("program_id", params.program_id);
+    }
+    if (params.from) {
+      search.set("from", params.from);
+    }
+    if (params.to) {
+      search.set("to", params.to);
+    }
+    return request<WorkoutList>(`/workouts?${search.toString()}`);
+  },
+
+  getWorkout(workoutId: string): Promise<WorkoutDetail> {
+    return request<WorkoutDetail>(
+      `/workouts/${encodeURIComponent(workoutId)}`,
+    );
+  },
+
+  patchWorkout(
+    workoutId: string,
+    payload: WorkoutUpdatePayload,
+  ): Promise<WorkoutDetail> {
+    return request<WorkoutDetail>(
+      `/workouts/${encodeURIComponent(workoutId)}`,
+      { method: "PATCH", body: payload },
+    );
+  },
+
+  saveWorkoutExercises(
+    workoutId: string,
+    payload: WorkoutExercisesPayload,
+  ): Promise<WorkoutDetail> {
+    return request<WorkoutDetail>(
+      `/workouts/${encodeURIComponent(workoutId)}/exercises`,
+      { method: "PUT", body: payload },
+    );
+  },
+
+  getWorkoutStats(): Promise<WorkoutStats> {
+    return request<WorkoutStats>("/workouts/stats");
+  },
+
+  listExerciseNames(): Promise<ExerciseNameList> {
+    return request<ExerciseNameList>("/workouts/exercises");
+  },
+
+  getExerciseProgress(
+    exercise: string,
+    limit = 20,
+  ): Promise<ExerciseProgressPoint[]> {
+    const search = new URLSearchParams();
+    search.set("exercise", exercise);
+    search.set("limit", String(limit));
+    return request<ExerciseProgressPoint[]>(
+      `/workouts/progress?${search.toString()}`,
+    );
   },
 
   ready(): Promise<ReadyResponse> {

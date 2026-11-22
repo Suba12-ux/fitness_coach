@@ -31,6 +31,14 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _env_bool_optional(name: str) -> bool | None:
+    """Вернуть None, если переменная не задана (нужно для явного override)."""
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return None
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
 @dataclass(frozen=True)
 class Settings:
     """Конфигурация, переопределяемая через переменные окружения."""
@@ -55,6 +63,8 @@ class Settings:
     # Аутентификация и сессии
     auth_cookie_name: str = os.getenv("AUTH_COOKIE_NAME", "sensei_session")
     auth_cookie_secure: bool = _env_bool("AUTH_COOKIE_SECURE", False)
+    # None — переменная не задана, действует правило по умолчанию для APP_ENV.
+    _auth_cookie_secure_override: bool | None = _env_bool_optional("AUTH_COOKIE_SECURE")
     auth_session_ttl_days: int = max(1, _env_int("AUTH_SESSION_TTL_DAYS", 7))
     auth_login_rate_limit: int = _env_int("AUTH_LOGIN_RATE_LIMIT", 10)
     auth_login_rate_window_seconds: int = _env_int(
@@ -63,7 +73,9 @@ class Settings:
 
     @property
     def auth_cookie_secure_effective(self) -> bool:
-        """Secure-cookie обязателен в production и включается флагом локально."""
+        """Secure-cookie включён по умолчанию в production; явный флаг имеет приоритет."""
+        if self._auth_cookie_secure_override is not None:
+            return self._auth_cookie_secure_override
         return self.auth_cookie_secure or self.app_env == "production"
 
     @property

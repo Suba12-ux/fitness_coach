@@ -6,6 +6,9 @@ const backend = "http://127.0.0.1:8000";
 const proxy = {
   "/workflow": backend,
   "/auth": backend,
+  "/profile": backend,
+  "/programs": backend,
+  "/workouts": backend,
   "/health": backend,
   "/ready": backend,
 };
@@ -22,6 +25,6 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.{ts,tsx}"],
   },
 });

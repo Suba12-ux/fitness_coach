@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import type { ToastTone } from "../hooks/useToasts";
 import type {
   SafetyIssueData,
@@ -16,6 +18,7 @@ import {
   shortId,
 } from "../lib/format";
 import { buildPlanMarkdown } from "../lib/markdown";
+import { formatPlanned } from "../lib/training";
 import {
   IconAlert,
   IconArrowLeft,
@@ -30,6 +33,7 @@ import {
   IconRefresh,
   IconShield,
 } from "./Icons";
+import { SaveProgramDialog } from "./SaveProgramDialog";
 import { StatusBadge } from "./StatusBadge";
 
 interface ResultViewProps {
@@ -37,6 +41,7 @@ interface ResultViewProps {
   onNewPlan: () => void;
   onRefine: () => void;
   onRetry: () => void;
+  onOpenProgram?: (programId: string) => void;
   notify: (message: string, tone?: ToastTone) => void;
 }
 
@@ -128,8 +133,10 @@ export function ResultView({
   onNewPlan,
   onRefine,
   onRetry,
+  onOpenProgram,
   notify,
 }: ResultViewProps) {
+  const [saveOpen, setSaveOpen] = useState(false);
   const final = run.final_answer ?? {};
   const plan = final.plan;
   const profile = final.profile;
@@ -363,6 +370,13 @@ export function ResultView({
           <button
             type="button"
             className="btn btn--primary btn--sm"
+            onClick={() => setSaveOpen(true)}
+          >
+            Сохранить как программу
+          </button>
+          <button
+            type="button"
+            className="btn btn--secondary btn--sm"
             onClick={onNewPlan}
           >
             Новый план
@@ -401,6 +415,21 @@ export function ResultView({
                       <IconClock />
                       {session.duration_min} мин
                     </span>
+                    {session.exercises?.length ? (
+                      <ul className="bullet-list session__exercises">
+                        {session.exercises.map((exercise, exerciseIndex) => (
+                          <li key={`${exercise.name}-${exerciseIndex}`}>
+                            {exercise.name} —{" "}
+                            {formatPlanned({
+                              sets: exercise.sets,
+                              reps: exercise.reps,
+                              weight_kg: exercise.weight_kg,
+                              duration_min: exercise.duration_min,
+                            })}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </article>
                 ))}
               </div>
@@ -511,6 +540,18 @@ export function ResultView({
           </details>
         </aside>
       </div>
+
+      <SaveProgramDialog
+        open={saveOpen}
+        runId={run.run_id}
+        defaultName={plan.goal || "Тренировочная программа"}
+        onClose={() => setSaveOpen(false)}
+        onSaved={(programId) => {
+          setSaveOpen(false);
+          onOpenProgram?.(programId);
+        }}
+        notify={notify}
+      />
     </section>
   );
 }

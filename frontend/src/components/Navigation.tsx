@@ -1,14 +1,60 @@
 import type { Theme } from "../hooks/useTheme";
 import type { SystemStatus } from "../hooks/useSystemStatus";
 import {
+  IconDumbbell,
   IconHistory,
+  IconLayers,
   IconLogOut,
   IconMoon,
   IconSparkles,
   IconSun,
+  IconUser,
 } from "./Icons";
 
-export type View = "compose" | "history";
+export type View =
+  | "compose"
+  | "programs"
+  | "workouts"
+  | "history"
+  | "profile";
+
+const NAV_ITEMS: Array<{
+  view: View;
+  label: string;
+  shortLabel: string;
+  icon: typeof IconSparkles;
+}> = [
+  {
+    view: "compose",
+    label: "Новый план",
+    shortLabel: "План",
+    icon: IconSparkles,
+  },
+  {
+    view: "programs",
+    label: "Программы",
+    shortLabel: "Программы",
+    icon: IconLayers,
+  },
+  {
+    view: "workouts",
+    label: "Тренировки",
+    shortLabel: "Тренировки",
+    icon: IconDumbbell,
+  },
+  {
+    view: "history",
+    label: "История планов",
+    shortLabel: "История",
+    icon: IconHistory,
+  },
+  {
+    view: "profile",
+    label: "Профиль",
+    shortLabel: "Профиль",
+    icon: IconUser,
+  },
+];
 
 interface NavigationProps {
   view: View;
@@ -122,9 +168,13 @@ function ThemeToggle({
 function HealthPill({ system }: { system: SystemStatus }) {
   const copy = SYSTEM_COPY[system.state];
   return (
-    <span className={`status status--${copy.statusTone} topbar__status`}>
+    <span
+      className={`status status--${copy.statusTone} topbar__status`}
+      aria-label={copy.label}
+      title={copy.label}
+    >
       <span className="status__dot" />
-      {copy.label}
+      <span className="topbar__status-text">{copy.label}</span>
     </span>
   );
 }
@@ -187,22 +237,20 @@ export function Sidebar({
 
       <nav className="nav" aria-label="Основная навигация">
         <span className="nav__label">Рабочая область</span>
-        <button
-          type="button"
-          className={`nav__item${view === "compose" ? " is-active" : ""}`}
-          onClick={() => onSelectView("compose")}
-        >
-          <IconSparkles />
-          Новый план
-        </button>
-        <button
-          type="button"
-          className={`nav__item${view === "history" ? " is-active" : ""}`}
-          onClick={() => onSelectView("history")}
-        >
-          <IconHistory />
-          История
-        </button>
+        {NAV_ITEMS.map((item) => {
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.view}
+              type="button"
+              className={`nav__item${view === item.view ? " is-active" : ""}`}
+              onClick={() => onSelectView(item.view)}
+            >
+              <Icon />
+              {item.label}
+            </button>
+          );
+        })}
       </nav>
 
       <div className="sidebar__bottom">
@@ -266,22 +314,24 @@ export function Topbar({
 export function MobileNav({ view, onSelectView }: Pick<NavigationProps, "view" | "onSelectView">) {
   return (
     <nav className="mobile-nav" aria-label="Мобильная навигация">
-      <button
-        type="button"
-        className={`mobile-nav__item${view === "compose" ? " is-active" : ""}`}
-        onClick={() => onSelectView("compose")}
-      >
-        <IconSparkles />
-        Новый план
-      </button>
-      <button
-        type="button"
-        className={`mobile-nav__item${view === "history" ? " is-active" : ""}`}
-        onClick={() => onSelectView("history")}
-      >
-        <IconHistory />
-        История
-      </button>
+      {NAV_ITEMS.map((item) => {
+        const Icon = item.icon;
+        return (
+          <button
+            key={item.view}
+            type="button"
+            className={`mobile-nav__item${
+              view === item.view ? " is-active" : ""
+            }`}
+            aria-label={item.label}
+            aria-current={view === item.view ? "page" : undefined}
+            onClick={() => onSelectView(item.view)}
+          >
+            <Icon />
+            <span className="mobile-nav__label">{item.shortLabel}</span>
+          </button>
+        );
+      })}
     </nav>
   );
 }

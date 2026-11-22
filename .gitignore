@@ -12,6 +12,8 @@ venv/
 
 # Секреты
 .env
+.env.*
+!.env.example
 
 # IDE
 .idea/

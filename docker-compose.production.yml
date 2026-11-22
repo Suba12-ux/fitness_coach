@@ -1,0 +1,142 @@
+name: sensei
+
+# Production-конфигурация: использует готовые образы из Docker Hub,
+# ничего не собирает на сервере. Значения берутся из /opt/sensei/.env
+# (Compose читает его автоматически) и из переменных окружения оболочки.
+#
+# Оба образа публикуются в один приватный репозиторий semomov/sensei
+# с префиксами тегов backend-<sha> и frontend-<sha>.
+# Обязательные переменные: IMAGE_TAG, DATABASE_URL, POSTGRES_PASSWORD.
+# Имя образа можно переопределить через DOCKERHUB_IMAGE. Не задавайте
+# DATABASE_URL на localhost — внутри контейнеров PostgreSQL доступен
+# по имени сервиса `postgres`.
+
+x-app-env: &app-env
+  APP_ENV: ${APP_ENV:-production}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set in /opt/sensei/.env}
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+  LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+  DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+  DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-}
+  DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+  LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-30}
+  LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-3}
+  SENSEI_MAX_RETRIES: ${SENSEI_MAX_RETRIES:-3}
+  SENSEI_AGENT_TIMEOUT_SECONDS: ${SENSEI_AGENT_TIMEOUT_SECONDS:-10}
+  AUTH_COOKIE_NAME: ${AUTH_COOKIE_NAME:-sensei_session}
+  AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
+  AUTH_SESSION_TTL_DAYS: ${AUTH_SESSION_TTL_DAYS:-7}
+  AUTH_LOGIN_RATE_LIMIT: ${AUTH_LOGIN_RATE_LIMIT:-10}
+  AUTH_LOGIN_RATE_WINDOW_SECONDS: ${AUTH_LOGIN_RATE_WINDOW_SECONDS:-900}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8081,http://127.0.0.1:8081}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sensei}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in /opt/sensei/.env}
+      POSTGRES_DB: ${POSTGRES_DB:-fitness_coach}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-sensei} -d ${POSTGRES_DB:-fitness_coach}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  migrate:
+    image: ${DOCKERHUB_IMAGE:-semomov/sensei}:backend-${IMAGE_TAG:?IMAGE_TAG must be set}
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      <<: *app-env
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    image: ${DOCKERHUB_IMAGE:-semomov/sensei}:backend-${IMAGE_TAG:?IMAGE_TAG must be set}
+    restart: unless-stopped
+    command: ["uvicorn", "app.api:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      <<: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 6
+
+  worker:
+    image: ${DOCKERHUB_IMAGE:-semomov/sensei}:backend-${IMAGE_TAG:?IMAGE_TAG must be set}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 20s
+    command: ["python", "-m", "app.workers.workflow_worker"]
+    environment:
+      <<: *app-env
+      WORKER_JOB_TIMEOUT_SECONDS: ${WORKER_JOB_TIMEOUT_SECONDS:-300}
+      WORKER_MAX_TRIES: ${WORKER_MAX_TRIES:-3}
+    # У worker нет HTTP-порта: healthcheck образа (api:8000) ему не подходит.
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  frontend:
+    image: ${DOCKERHUB_IMAGE:-semomov/sensei}:frontend-${IMAGE_TAG:?IMAGE_TAG must be set}
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-8081}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 6
+
+volumes:
+  postgres_data:
+    name: sensei_postgres_data
+  redis_data:
+    name: sensei_redis_data
