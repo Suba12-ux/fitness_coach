@@ -1,0 +1,186 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend-tests:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run pytest
+        working-directory: backend
+        run: pytest -q
+
+  frontend-tests:
+    name: Frontend tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Run tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+  build-and-push:
+    name: Build and push images
+    needs: [backend-tests, frontend-tests]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            semomov/sensei:backend-${{ github.sha }}
+            semomov/sensei:backend-latest
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            semomov/sensei:frontend-${{ github.sha }}
+            semomov/sensei:frontend-latest
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+  deploy:
+    name: Deploy to server
+    needs: build-and-push
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SERVER_SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
+
+      - name: Log in to Docker Hub on the server
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          printf '%s' "$DOCKERHUB_TOKEN" | \
+            ssh -i ~/.ssh/deploy_key "$SERVER_USER@$SERVER_HOST" \
+              "docker login -u '$DOCKERHUB_USERNAME' --password-stdin"
+
+      - name: Pull images and restart services
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          ssh -i ~/.ssh/deploy_key "$SERVER_USER@$SERVER_HOST" \
+            "IMAGE_TAG='$IMAGE_TAG' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          cd /opt/sensei
+          export IMAGE_TAG
+
+          http_check() {
+            if command -v curl >/dev/null 2>&1; then
+              curl -fsS "http://127.0.0.1:8081$1" >/dev/null
+            else
+              docker compose -f docker-compose.production.yml exec -T frontend \
+                wget -q -O /dev/null "http://127.0.0.1$1"
+            fi
+          }
+
+          echo "Pulling images for tag $IMAGE_TAG"
+          docker compose -f docker-compose.production.yml pull
+          docker compose -f docker-compose.production.yml up -d --remove-orphans
+
+          echo "Waiting for /health"
+          for attempt in $(seq 1 30); do
+            if http_check /health; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "Health check failed after 30 attempts" >&2
+              docker compose -f docker-compose.production.yml ps || true
+              docker compose -f docker-compose.production.yml logs --tail=200 || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Checking /ready"
+          if ! http_check /ready; then
+            echo "Readiness check failed" >&2
+            docker compose -f docker-compose.production.yml ps || true
+            docker compose -f docker-compose.production.yml logs --tail=200 || true
+            exit 1
+          fi
+
+          docker compose -f docker-compose.production.yml ps
+          REMOTE

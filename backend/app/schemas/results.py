@@ -31,12 +31,28 @@ class UserProfile(BaseModel):
     limitations: List[str] = Field(default_factory=list)
 
 
+class TrainingExercise(BaseModel):
+    """Предписанное упражнение внутри тренировки.
+
+    Поля плана необязательны: кардио измеряется длительностью, силовые —
+    подходами и повторениями. Рабочий вес агент не выдумывает.
+    """
+
+    name: str
+    sets: Optional[int] = None
+    reps: Optional[int] = None
+    weight_kg: Optional[float] = None
+    duration_min: Optional[int] = None
+    notes: Optional[str] = None
+
+
 class TrainingSession(BaseModel):
     """Одна тренировка в недельном плане."""
 
     day: str
     activity: str
     duration_min: int
+    exercises: List[TrainingExercise] = Field(default_factory=list)
 
 
 class TrainingPlan(BaseModel):

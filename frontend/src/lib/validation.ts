@@ -52,6 +52,20 @@ function parseOptionalNumber(
   }
 }
 
+export function isFormPristine(form: FormState): boolean {
+  return (
+    form.request === "" &&
+    form.goal === "" &&
+    form.age === "" &&
+    form.weight === "" &&
+    form.height === "" &&
+    form.experience === EMPTY_FORM.experience &&
+    form.days === EMPTY_FORM.days &&
+    form.minutes === EMPTY_FORM.minutes &&
+    form.limitations.length === 0
+  );
+}
+
 export function validateForm(form: FormState): FormErrors {
   const errors: FormErrors = {};
   const request = form.request.trim();

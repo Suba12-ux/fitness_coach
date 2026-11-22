@@ -10,11 +10,20 @@ from app.agents.base import BaseAgent
 from app.schemas.results import (
     AgentResult,
     AgentStatus,
+    TrainingExercise,
     TrainingPlan,
     TrainingSession,
     UserProfile,
 )
 from app.schemas.tasks import AgentTask
+
+_STRENGTH_PRESCRIPTION = {
+    "низкая": (3, 10),
+    "средняя": (3, 12),
+    "высокая": (4, 10),
+}
+
+_INTERVALS_BY_INTENSITY = {"низкая": 4, "средняя": 6, "высокая": 8}
 
 
 class TrainingAgent(BaseAgent):
@@ -72,12 +81,20 @@ class TrainingAgent(BaseAgent):
         limitations: List[str],
     ) -> List[TrainingSession]:
         names = ["Понедельник", "Среда", "Пятница", "Вторник", "Четверг"]
+        kinds = ("strength", "cardio", "functional")
         sessions: List[TrainingSession] = []
         for index in range(days):
             day = names[index % len(names)]
-            activity = self._pick_activity(index, intensity, limitations)
+            kind = kinds[index % len(kinds)]
             sessions.append(
-                TrainingSession(day=day, activity=activity, duration_min=duration)
+                TrainingSession(
+                    day=day,
+                    activity=self._pick_activity(index, intensity, limitations),
+                    duration_min=duration,
+                    exercises=self._build_exercises(
+                        kind, intensity, limitations
+                    ),
+                )
             )
         return sessions
 
@@ -94,6 +111,61 @@ class TrainingAgent(BaseAgent):
         if limitations:
             activity += " (адаптировано под ограничения)"
         return activity
+
+    @staticmethod
+    def _build_exercises(
+        kind: str, intensity: str, limitations: List[str]
+    ) -> List[TrainingExercise]:
+        """Детерминированный набор упражнений без выдуманных рабочих весов."""
+        note = "Адаптировано под ограничения" if limitations else None
+        sets, reps = _STRENGTH_PRESCRIPTION.get(intensity, (3, 12))
+
+        if kind == "strength":
+            return [
+                TrainingExercise(
+                    name="Приседания", sets=sets, reps=reps, notes=note
+                ),
+                TrainingExercise(
+                    name="Жим лёжа", sets=sets, reps=reps, notes=note
+                ),
+                TrainingExercise(
+                    name="Тяга в наклоне", sets=sets, reps=reps, notes=note
+                ),
+                TrainingExercise(
+                    name="Планка",
+                    sets=sets,
+                    duration_min=1,
+                    notes=note,
+                ),
+            ]
+
+        if kind == "cardio":
+            intervals = _INTERVALS_BY_INTENSITY.get(intensity, 6)
+            return [
+                TrainingExercise(name="Разминка", duration_min=10, notes=note),
+                TrainingExercise(
+                    name="Интервалы",
+                    sets=intervals,
+                    duration_min=1,
+                    notes=note,
+                ),
+                TrainingExercise(name="Заминка", duration_min=5, notes=note),
+            ]
+
+        return [
+            TrainingExercise(
+                name="Приседания с собственным весом",
+                sets=sets,
+                reps=reps,
+                notes=note,
+            ),
+            TrainingExercise(
+                name="Отжимания от пола", sets=sets, reps=reps, notes=note
+            ),
+            TrainingExercise(
+                name="Выпады", sets=sets, reps=reps, notes=note
+            ),
+        ]
 
     @staticmethod
     def _build_warnings(profile: UserProfile) -> List[str]:

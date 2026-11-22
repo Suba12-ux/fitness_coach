@@ -16,10 +16,12 @@ async def create_run(
     user_data: Dict[str, Any],
     status: str = "queued",
     state: Optional[Dict[str, Any]] = None,
+    user_id: Optional[str] = None,
 ) -> WorkflowRun:
     """Создать запись запуска и вернуть её."""
     run = WorkflowRun(
         request=request,
+        user_id=user_id,
         user_data=user_data,
         status=status,
         state=state or {},
@@ -33,6 +35,18 @@ async def create_run(
 async def get_run(session: AsyncSession, run_id: str) -> Optional[WorkflowRun]:
     """Вернуть запись по идентификатору или None."""
     return await session.get(WorkflowRun, run_id)
+
+
+async def get_run_for_user(
+    session: AsyncSession, run_id: str, user_id: str
+) -> Optional[WorkflowRun]:
+    """Вернуть запуск только если он принадлежит пользователю."""
+    result = await session.execute(
+        select(WorkflowRun).where(
+            WorkflowRun.id == run_id, WorkflowRun.user_id == user_id
+        )
+    )
+    return result.scalar_one_or_none()
 
 
 async def list_runs(
@@ -62,6 +76,44 @@ async def count_runs(
 ) -> int:
     """Посчитать количество запусков (опционально — по статусу)."""
     statement = select(func.count()).select_from(WorkflowRun)
+    if status:
+        statement = statement.where(WorkflowRun.status == status)
+    result = await session.execute(statement)
+    return int(result.scalar_one())
+
+
+async def list_runs_for_user(
+    session: AsyncSession,
+    user_id: str,
+    *,
+    limit: int = 20,
+    offset: int = 0,
+    status: Optional[str] = None,
+) -> List[WorkflowRun]:
+    """Страница запусков конкретного пользователя."""
+    statement = select(WorkflowRun).where(WorkflowRun.user_id == user_id)
+    if status:
+        statement = statement.where(WorkflowRun.status == status)
+    statement = (
+        statement.order_by(
+            WorkflowRun.created_at.desc(), WorkflowRun.id.desc()
+        )
+        .limit(limit)
+        .offset(offset)
+    )
+    result = await session.execute(statement)
+    return list(result.scalars().all())
+
+
+async def count_runs_for_user(
+    session: AsyncSession, user_id: str, *, status: Optional[str] = None
+) -> int:
+    """Количество запусков пользователя."""
+    statement = (
+        select(func.count())
+        .select_from(WorkflowRun)
+        .where(WorkflowRun.user_id == user_id)
+    )
     if status:
         statement = statement.where(WorkflowRun.status == status)
     result = await session.execute(statement)

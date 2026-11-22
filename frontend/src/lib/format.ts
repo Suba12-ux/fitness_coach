@@ -57,6 +57,35 @@ export function formatDateTime(value?: string | null): string {
     .replace(",", " ·");
 }
 
+export function formatDate(value?: string | null): string {
+  const date = parseApiDate(value);
+  if (!date) {
+    return "—";
+  }
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
+
+/** Дата без времени (`YYYY-MM-DD`), без сдвига часового пояса. */
+export function formatDateOnly(value?: string | null): string {
+  if (!value) {
+    return "—";
+  }
+  const parts = value.slice(0, 10).split("-").map(Number);
+  if (parts.length !== 3 || parts.some((part) => !Number.isFinite(part))) {
+    return value;
+  }
+  const [year, month, day] = parts;
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date(Date.UTC(year, month - 1, day, 12)));
+}
+
 export function formatDuration(
   startedAt?: string | null,
   finishedAt?: string | null,

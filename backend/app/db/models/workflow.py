@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from sqlalchemy import JSON, DateTime, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -23,6 +23,9 @@ class WorkflowRun(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     request: Mapped[str] = mapped_column(Text, nullable=False)
+    user_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     user_data: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     state: Mapped[Dict[str, Any]] = mapped_column(
