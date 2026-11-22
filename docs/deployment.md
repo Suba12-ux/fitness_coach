@@ -9,7 +9,7 @@
 4. На сервере скачиваются образы с тегом Git commit SHA и перезапускаются сервисы.
 5. Выполняются проверки `/health` и `/ready`.
 
-Приложение открывается по адресу `http://SERVER_IP:8081`. Порты `80` и `443` не
+Приложение открывается по адресу `http://SERVER_IP:8080`. Порты `80` и `443` не
 используются: они могут быть заняты другим приложением на сервере.
 
 ## Состав файлов
@@ -83,7 +83,7 @@ cat ~/.ssh/sensei_deploy
 - Linux-сервер с публичным IP;
 - Docker Engine и плагин Docker Compose v2;
 - SSH-доступ для `SERVER_USER`;
-- открытый входящий порт `8081` (firewall/security group);
+- открытый входящий порт `8080` (firewall/security group);
 - `curl` (желательно; при его отсутствии workflow использует `wget` внутри
   контейнера `frontend`).
 
@@ -156,8 +156,8 @@ DATABASE_URL=postgresql+asyncpg://sensei:CHANGE_ME_STRONG_PASSWORD@postgres:5432
 REDIS_URL=redis://redis:6379/0
 
 # Публикация frontend
-FRONTEND_PORT=8081
-CORS_ORIGINS=http://SERVER_IP:8081
+FRONTEND_PORT=8080
+CORS_ORIGINS=http://SERVER_IP:8080
 
 # LLM
 LLM_PROVIDER=deepseek
@@ -230,7 +230,7 @@ chmod 600 /opt/sensei/.env
 
 В `APP_ENV=production` cookie сессии по умолчанию помечается `Secure`, и браузер
 не передаёт её по обычному HTTP. Пока HTTPS не настроен, для проверки по
-`http://SERVER_IP:8081` можно временно добавить в `.env`:
+`http://SERVER_IP:8080` можно временно добавить в `.env`:
 
 ```dotenv
 AUTH_COOKIE_SECURE=false
@@ -263,8 +263,8 @@ docker compose -f docker-compose.production.yml up -d
 
 ```bash
 docker compose -f docker-compose.production.yml ps
-curl -fsS http://127.0.0.1:8081/health
-curl -fsS http://127.0.0.1:8081/ready
+curl -fsS http://127.0.0.1:8080/health
+curl -fsS http://127.0.0.1:8080/ready
 ```
 
 Ожидаемые ответы:
@@ -272,7 +272,7 @@ curl -fsS http://127.0.0.1:8081/ready
 - `/health` → `{"status":"ok"}`;
 - `/ready` → `{"status":"ok","checks":{"database":"ok","redis":"ok"}}`.
 
-Затем откройте `http://SERVER_IP:8081` и проверьте регистрацию, вход и создание
+Затем откройте `http://SERVER_IP:8080` и проверьте регистрацию, вход и создание
 тренировочного плана.
 
 ## 7. Автоматический деплой
@@ -343,13 +343,13 @@ docker compose -f docker-compose.production.yml up -d --remove-orphans
 | `/ready` возвращает 503 | Недоступны БД или Redis; проверьте `checks` в ответе и логи `backend`/`postgres`/`redis`. |
 | Ответ 502 от frontend | Backend не прошёл healthcheck или перезапускается; смотрите логи `backend`. |
 | Вход не сохраняется по HTTP | Cookie `Secure` не отправляется по HTTP. Временно `AUTH_COOKIE_SECURE=false`, затем вернуть `true` после HTTPS. |
-| `port is already allocated` | Порт `8081` занят; измените `FRONTEND_PORT` в `.env`. |
+| `port is already allocated` | Порт `8080` занят; измените `FRONTEND_PORT` в `.env`. |
 | Workflow не деплоит | Push был не в `main` либо CI не прошёл. PR-запуски не публикуют образы и не деплоят. |
 | Данные пропали после перезапуска | Не используйте `down -v`; проверьте volume `sensei_postgres_data`. |
 
 ## 11. Ограничения текущего этапа
 
-- Домен и HTTPS не настраиваются; используется `http://SERVER_IP:8081`.
+- Домен и HTTPS не настраиваются; используется `http://SERVER_IP:8080`.
 - Порты `80` и `443` не занимаются.
 - Backend, PostgreSQL и Redis не публикуются во внешнюю сеть.
 - Существующие приложения и инфраструктура сервера не изменяются.
